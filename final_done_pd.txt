@@ -1,0 +1,1002 @@
+library(caret)
+library(ggplot2)
+library(MASS)
+library(car)
+library(mlogit)
+library(sqldf)
+library(Hmisc)
+
+#Importing the data
+
+setwd("C:\\Users\\dell\\Desktop\\Sukanya\\Ivy_Analytics Hackathon_ongoing\\PD Model\\PD Project Data")
+srs<-read.csv("LoanStats3a.csv",header = TRUE, na.strings="")
+
+#Identifying the structure of the data
+str(srs)
+
+#Checking number of rows and column in the data
+nrow(srs)
+ncol(srs)
+
+#Making the necessary structural changes
+
+srs$is_inc_v <-as.factor(srs$is_inc_v)
+srs$chargeoff_within_12_mths <-as.factor(srs$chargeoff_within_12_mths)
+srs$collections_12_mths_ex_med <-as.factor(srs$collections_12_mths_ex_med)
+srs$tax_liens<- as.factor(srs$tax_liens)
+srs$policy_code<-as.factor(srs$policy_code)
+srs$Churn<-as.factor(srs$Churn)
+srs$pub_rec<-as.factor(srs$pub_rec)
+srs$pub_rec_bankruptcies<-as.factor(srs$pub_rec_bankruptcies)
+srs$delinq_2yrs<-as.factor(srs$delinq_2yrs)
+srs$delinq_amnt<-as.factor(srs$delinq_amnt)
+srs$acc_now_delinq<-as.factor(srs$acc_now_delinq)
+
+#Dividing the data into training and validation data
+
+pd <- sample(2, nrow(srs), replace=TRUE, prob = c(0.65,0.35))
+tdata <- srs[pd==1,]
+vdata <- srs[pd==2,]
+
+#Now procceding with tdata
+##Finding IV value
+
+###For Numeric Data
+
+iv_num <- function(variable, target,data,groups)
+{
+  data[,"rank"] <- cut2(data[,variable],g=groups)
+  tableOutput <-sqldf(sprintf("select rank, 
+                              count(%s) n,
+                              sum(%s) good
+                              from data 
+                              group by rank",target,target))
+  tableOutput <- sqldf("select *,
+                       (n - good) bad
+                       from tableOutput")
+  tableOutput$bad_rate<- tableOutput$bad/sum(tableOutput$bad)*100
+  tableOutput$good_rate<- tableOutput$good/sum(tableOutput$good)*100
+  tableOutput$WOE<- (log(tableOutput$good_rate/tableOutput$bad_rate))*100
+  tableOutput$IV <- (log(tableOutput$good_rate/tableOutput$bad_rate))*(tableOutput$good_rate-tableOutput$bad_rate)/100
+  IV <- sum(tableOutput$IV[is.finite(tableOutput$IV)])
+  IV1 <- data.frame(cbind(variable,IV))
+  return(IV1)
+}
+
+a1<- iv_num("id","Churn",tdata,groups=10)
+a2<- iv_num("member_id","Churn",tdata,groups=10)
+a3<- iv_num("loan_amnt","Churn",tdata,groups=10)
+a4<- iv_num("funded_amnt","Churn",tdata,groups=10)
+a5<- iv_num("funded_amnt_inv","Churn",tdata,groups=10)
+a6<- iv_num("int_rate","Churn",tdata,groups=10)
+a7<- iv_num("installment","Churn",tdata,groups=10)
+a8<- iv_num("annual_inc","Churn",tdata,groups=10)
+a9<- iv_num("dti","Churn",tdata,groups=10)
+a10<- iv_num("fico_range_low","Churn",tdata,groups=10)
+a11<- iv_num("fico_range_high","Churn",tdata,groups=10)
+a12<- iv_num("inq_last_6mths","Churn",tdata,groups=10)
+a13<- iv_num("mths_since_last_delinq","Churn",tdata,groups=10)
+a14<- iv_num("mths_since_last_record","Churn",tdata,groups=10)
+a15<- iv_num("open_acc","Churn",tdata,groups=10)
+a16<- iv_num("revol_bal","Churn",tdata,groups=10)
+a17<- iv_num("revol_util","Churn",tdata,groups=10)
+a18<- iv_num("total_acc","Churn",tdata,groups=10)
+a19<- iv_num("out_prncp","Churn",tdata,groups=10)
+a20<- iv_num("out_prncp_inv","Churn",tdata,groups=10)
+a21<- iv_num("total_pymnt","Churn",tdata,groups=10)
+a22<- iv_num("total_pymnt_inv","Churn",tdata,groups=10)
+a23<- iv_num("total_rec_prncp","Churn",tdata,groups=10)
+a24<- iv_num("total_rec_int","Churn",tdata,groups=10)
+a25<- iv_num("total_rec_late_fee","Churn",tdata,groups=10)
+a26<- iv_num("last_pymnt_amnt","Churn",tdata,groups=10)
+a27<- iv_num("last_fico_range_high","Churn",tdata,groups=10)
+a28<- iv_num("last_fico_range_low","Churn",tdata,groups=10)
+
+IV_num<- data.frame(rbind(a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28))
+
+###For Categorical data
+
+iv_char <- function(variable, target, data) {
+  pintu1<- fn$sqldf("select $variable,count($target)n, sum($target)good from data group by $variable")
+  
+  pintu1<- fn$sqldf("select *, (n-good) bad from pintu1")
+  pintu1$bad_rate <- pintu1$bad/sum(pintu1$bad)*100
+  
+  pintu1$good_rate<- pintu1$good/sum(pintu1$good)*100
+  pintu1$WOE<- (log(pintu1$good_rate/pintu1$bad_rate))*100
+  pintu1$IV <- (log(pintu1$good_rate/pintu1$bad_rate))*(pintu1$good_rate-pintu1$bad_rate)/100
+  IV <- sum(pintu1$IV[is.finite(pintu1$IV)])
+  IV1 <- data.frame(cbind(variable,IV))
+  return(IV1)
+}
+
+A<- iv_char("term","Churn",tdata)
+B<- iv_char("grade","Churn",tdata)
+C<- iv_char("sub_grade","Churn",tdata)
+D<- iv_char("emp_name","Churn",tdata)
+E<- iv_char("emp_length","Churn",tdata)
+F<- iv_char("home_ownership","Churn",tdata)
+G<- iv_char("is_inc_v","Churn",tdata)
+H<- iv_char("accept_d","Churn",tdata)
+I<- iv_char("exp_d","Churn",tdata)
+J<- iv_char("list_d","Churn",tdata)
+K<- iv_char("issue_d","Churn",tdata)
+L<- iv_char("loan_status","Churn",tdata)
+M<- iv_char("pymnt_plan","Churn",tdata)
+N<- iv_char("url","Churn",tdata)
+O<- iv_char("desc","Churn",tdata)
+P<- iv_char("purpose","Churn",tdata)
+Q<- iv_char("title","Churn",tdata)
+R<- iv_char("addr_city","Churn",tdata)
+S<- iv_char("addr_state","Churn",tdata)
+T<- iv_char("earliest_cr_line","Churn",tdata)
+U<- iv_char("initial_list_status","Churn",tdata)
+V<- iv_char("last_credit_pull_d","Churn",tdata)
+W<- iv_char("policy_code","Churn",tdata)
+X<- iv_char("tax_liens","Churn",tdata)
+Y<- iv_char("collections_12_mths_ex_med","Churn",tdata)
+Z<- iv_char("chargeoff_within_12_mths","Churn",tdata)
+Z1<- iv_char("pub_rec","Churn",tdata)
+Z2<- iv_char("pub_rec_bankruptcies","Churn",tdata)
+Z3<- iv_char("delinq_2yrs","Churn",tdata)
+Z4<- iv_char("delinq_amnt","Churn",tdata)
+Z5<- iv_char("acc_now_delinq","Churn",tdata)
+Z6<- iv_char("last_pymnt_d","Churn",tdata)
+Z7<- iv_char("next_pymnt_d","Churn",tdata)
+
+IV_cat<- data.frame(rbind(A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z,Z1,Z2,Z3,Z4,Z5,Z6,Z7))
+
+#Finding the IV values of the variables
+
+Final_IV <- data.frame(rbind(IV_num,IV_cat))
+Final_IV
+
+                     variable                   IV
+1                          id    0.356579507263859
+2                   member_id    0.359337136478317
+3                   loan_amnt   0.0191944449203203
+4                 funded_amnt   0.0166141558778849
+5             funded_amnt_inv    0.127202808601749
+6                    int_rate    0.394085295813876
+7                 installment   0.0146916256599344
+8                  annual_inc   0.0320702169142257
+9                         dti   0.0149674427007372
+10             fico_range_low    0.324473519601511
+11            fico_range_high    0.324473519601511
+12             inq_last_6mths    0.890704255257002
+13     mths_since_last_delinq   0.0819269000415564
+14     mths_since_last_record    0.192449281145341
+15                   open_acc   0.0237312517576406
+16                  revol_bal   0.0326124833414082
+17                 revol_util   0.0726248400366563
+18                  total_acc   0.0324543574333772
+19                  out_prncp    0.732499113144587
+20              out_prncp_inv    0.733171826932973
+21                total_pymnt    0.531671924292431
+22            total_pymnt_inv    0.821091888525546
+23            total_rec_prncp    0.827040195243248
+24              total_rec_int   0.0500629327530739
+25         total_rec_late_fee    0.185523495932239
+26            last_pymnt_amnt    0.316881758897973
+27       last_fico_range_high     2.69787638746652
+28        last_fico_range_low     2.69787638746652
+29                       term 0.000379302288617148
+30                      grade    0.494954668070094
+31                  sub_grade    0.545403829459364
+32                   emp_name    0.149217420174885
+33                 emp_length   0.0113886760550529
+34             home_ownership  0.00923275068361795
+35                   is_inc_v 0.000756876504219241
+36                   accept_d    0.658028286217956
+37                      exp_d    0.659445654425956
+38                     list_d    0.659445654425956
+39                    issue_d    0.622063881569879
+40                loan_status                    0
+41                 pymnt_plan   0.0195918584352828
+42                        url                    0
+43                       desc   0.0380023108452424
+44                    purpose   0.0897247143701681
+45                      title    0.205436277360441
+46                  addr_city    0.460985462829111
+47                 addr_state   0.0367325211087444
+48           earliest_cr_line  0.00545776181342111
+49        initial_list_status                    0
+50         last_credit_pull_d     1.16148837357777
+51                policy_code                    0
+52                  tax_liens   0.0182706830218664
+53 collections_12_mths_ex_med   0.0274936886528238
+54   chargeoff_within_12_mths   0.0274936886528238
+55                    pub_rec   0.0270103444314908
+56       pub_rec_bankruptcies    0.198935967357227
+57                delinq_2yrs   0.0112134243205248
+58                delinq_amnt 2.01111969811629e-05
+59             acc_now_delinq  2.2074515968518e-05
+60               last_pymnt_d      1.5901235380295
+61               next_pymnt_d       0.548669092848
+
+
+
+write.csv(Final_IV,"IV_val_tdata.csv")
+write.csv(tnew,"tnew.csv")
+
+### Creating a new table with only the variables having IV value between 0.1 - 0.5
+
+tnew <- data.frame(tdata$id,tdata$member_id,tdata$funded_amnt_inv,tdata$int_rate,
+                   tdata$fico_range_high,tdata$fico_range_low,
+                   tdata$total_pymnt,tdata$total_rec_late_fee,
+                   tdata$last_pymnt_amnt,tdata$grade,
+                   tdata$emp_name,tdata$title,
+                   tdata$addr_city,tdata$pub_rec_bankruptcies,
+                   tdata$next_pymnt_d,tdata$Churn)
+
+str(tnew)
+summary(tnew)
+
+nrow(tnew)
+
+#Detection and removal of outliers
+
+boxplot(tnew$tdata.funded_amnt_inv)
+tnew <- tnew[tnew$tdata.funded_amnt_inv <=26000, ]
+
+boxplot(tnew$tdata.total_pymnt)
+tnew <- tnew[tnew$tdata.total_pymnt <=19000, ]
+
+boxplot(tnew$tdata.total_rec_late_fee)
+tnew <- tnew[tnew$tdata.total_rec_late_fee <=12, ]
+
+boxplot(tnew$tdata.last_pymnt_amnt)
+tnew <- tnew[tnew$tdata.last_pymnt_amnt <=700, ]
+
+nrow(tnew)
+
+#Missing Value treatment
+
+sapply(tnew, function(x) sum(is.na(x)))
+
+ tdata.id            tdata.member_id 
+                         0                          0 
+     tdata.funded_amnt_inv             tdata.int_rate 
+                         0                          0 
+     tdata.fico_range_high       tdata.fico_range_low 
+                         0                          0 
+         tdata.total_pymnt   tdata.total_rec_late_fee 
+                         0                          0 
+     tdata.last_pymnt_amnt                tdata.grade 
+                         0                          0 
+            tdata.emp_name                tdata.title 
+                      1124                          5 
+           tdata.addr_city tdata.pub_rec_bankruptcies 
+                         0                        520 
+        tdata.next_pymnt_d                tdata.Churn 
+                         0                          0 
+
+tnew<-na.omit(tnew)
+
+                 tdata.id            tdata.member_id 
+                         0                          0 
+     tdata.funded_amnt_inv             tdata.int_rate 
+                         0                          0 
+     tdata.fico_range_high       tdata.fico_range_low 
+                         0                          0 
+         tdata.total_pymnt   tdata.total_rec_late_fee 
+                         0                          0 
+     tdata.last_pymnt_amnt                tdata.grade 
+                         0                          0 
+            tdata.emp_name                tdata.title 
+                         0                          0 
+           tdata.addr_city tdata.pub_rec_bankruptcies 
+                         0                          0 
+        tdata.next_pymnt_d                tdata.Churn 
+                         0                          0 
+
+
+#Modelling
+
+model <- glm(tdata.Churn~ tdata.id+ tdata.member_id+ tdata.int_rate+ tdata.funded_amnt_inv+
+               tdata.total_rec_late_fee+tdata.pub_rec_bankruptcies+ tdata.last_pymnt_amnt+
+               tdata.fico_range_low+ tdata.fico_range_high+
+               tdata.grade+ tdata.total_pymnt+ tdata.next_pymnt_d,data=tnew, family=binomial())
+
+
+Call:
+glm(formula = tdata.Churn ~ tdata.id + tdata.member_id + tdata.int_rate + 
+    tdata.funded_amnt_inv + tdata.total_rec_late_fee + tdata.pub_rec_bankruptcies + 
+    tdata.last_pymnt_amnt + tdata.fico_range_low + tdata.fico_range_high + 
+    tdata.grade + tdata.total_pymnt + tdata.next_pymnt_d, family = binomial(), 
+    data = tnew)
+
+Deviance Residuals: 
+    Min       1Q   Median       3Q      Max  
+-2.2526  -0.3468  -0.1878  -0.0894   4.3799  
+
+Coefficients: (2 not defined because of singularities)
+                               Estimate Std. Error z value Pr(>|z|)    
+(Intercept)                   2.751e+01  3.956e+03   0.007 0.994451    
+tdata.id                     -8.072e-06  1.444e-06  -5.591 2.26e-08 ***
+tdata.member_id               5.189e-06  1.119e-06   4.636 3.55e-06 ***
+tdata.int_rate               -2.348e+01  3.742e+00  -6.276 3.46e-10 ***
+tdata.funded_amnt_inv         5.195e-04  1.652e-05  31.453  < 2e-16 ***
+tdata.total_rec_late_fee     -3.182e+01  8.991e+03  -0.004 0.997176    
+tdata.pub_rec_bankruptcies1   4.985e-01  1.455e-01   3.425 0.000614 ***
+tdata.pub_rec_bankruptcies2   4.197e-01  5.595e+03   0.000 0.999940    
+tdata.last_pymnt_amnt        -2.014e-03  2.915e-04  -6.909 4.89e-12 ***
+tdata.fico_range_low         -9.623e-03  1.816e-03  -5.299 1.17e-07 ***
+tdata.fico_range_high                NA         NA      NA       NA    
+tdata.gradeB                  9.641e-01  1.667e-01   5.785 7.26e-09 ***
+tdata.gradeC                  1.671e+00  2.476e-01   6.748 1.50e-11 ***
+tdata.gradeD                  2.552e+00  3.200e-01   7.977 1.50e-15 ***
+tdata.gradeE                  3.436e+00  3.957e-01   8.682  < 2e-16 ***
+tdata.gradeF                  3.645e+00  5.013e-01   7.271 3.58e-13 ***
+tdata.gradeG                  5.439e+00  6.231e-01   8.730  < 2e-16 ***
+tdata.total_pymnt            -7.043e-04  2.103e-05 -33.485  < 2e-16 ***
+tdata.next_pymnt_d1/10/2012  -2.821e-01  5.595e+03   0.000 0.999960    
+tdata.next_pymnt_d1/11/2010  -2.717e+00  5.595e+03   0.000 0.999613    
+tdata.next_pymnt_d1/12/2011   7.020e-02  5.595e+03   0.000 0.999990    
+tdata.next_pymnt_d1/14/2010   1.052e+00  5.595e+03   0.000 0.999850    
+tdata.next_pymnt_d1/16/2011  -4.616e-01  5.595e+03   0.000 0.999934    
+tdata.next_pymnt_d1/16/2013   3.723e-01  5.595e+03   0.000 0.999947    
+tdata.next_pymnt_d1/18/2011  -5.179e+00  5.595e+03  -0.001 0.999261    
+tdata.next_pymnt_d1/18/2013   8.673e-01  4.845e+03   0.000 0.999857    
+tdata.next_pymnt_d1/19/2010  -2.420e+00  5.595e+03   0.000 0.999655    
+tdata.next_pymnt_d1/19/2011   1.519e+00  4.744e+03   0.000 0.999744    
+tdata.next_pymnt_d1/20/2012   4.132e+00  5.595e+03   0.001 0.999411    
+tdata.next_pymnt_d1/21/2011   5.006e-01  5.595e+03   0.000 0.999929    
+tdata.next_pymnt_d1/21/2013   3.109e+00  4.641e+03   0.001 0.999466    
+tdata.next_pymnt_d1/22/2012  -7.462e-01  4.464e+03   0.000 0.999867    
+tdata.next_pymnt_d1/22/2013   3.516e+00  5.595e+03   0.001 0.999499    
+tdata.next_pymnt_d1/24/2010  -7.837e-01  5.595e+03   0.000 0.999888    
+tdata.next_pymnt_d1/24/2012  -1.580e+00  5.595e+03   0.000 0.999775    
+tdata.next_pymnt_d1/25/2011          NA         NA      NA       NA    
+tdata.next_pymnt_d1/26/2012   4.490e+00  5.595e+03   0.001 0.999360    
+tdata.next_pymnt_d1/28/2010  -3.928e-03  5.595e+03   0.000 0.999999    
+tdata.next_pymnt_d1/28/2011  -5.247e+00  5.595e+03  -0.001 0.999252    
+tdata.next_pymnt_d1/28/2012  -1.364e+00  4.234e+03   0.000 0.999743    
+tdata.next_pymnt_d1/28/2013   2.838e+00  5.595e+03   0.001 0.999595    
+tdata.next_pymnt_d1/3/2009   -6.127e+00  5.595e+03  -0.001 0.999126    
+tdata.next_pymnt_d1/4/2013    1.314e+00  5.595e+03   0.000 0.999813    
+tdata.next_pymnt_d1/5/2009   -5.186e+00  5.595e+03  -0.001 0.999260    
+tdata.next_pymnt_d1/5/2013    4.663e+00  5.595e+03   0.001 0.999335    
+tdata.next_pymnt_d1/7/2012    1.844e+00  5.595e+03   0.000 0.999737    
+tdata.next_pymnt_d1/8/2011    2.468e+00  5.595e+03   0.000 0.999648    
+tdata.next_pymnt_d1/8/2012    2.224e+00  4.574e+03   0.000 0.999612    
+tdata.next_pymnt_d1/8/2013    1.519e+00  5.595e+03   0.000 0.999783    
+tdata.next_pymnt_d1/9/2011   -1.265e+00  5.595e+03   0.000 0.999820    
+tdata.next_pymnt_d10/1/2011  -1.138e+00  5.595e+03   0.000 0.999838    
+tdata.next_pymnt_d10/1/2013  -2.124e+01  3.956e+03  -0.005 0.995717    
+tdata.next_pymnt_d10/10/2010 -1.643e-01  4.549e+03   0.000 0.999971    
+tdata.next_pymnt_d10/10/2012  5.303e-01  5.595e+03   0.000 0.999924    
+tdata.next_pymnt_d10/12/2011 -4.854e+00  5.595e+03  -0.001 0.999308    
+tdata.next_pymnt_d10/13/2011  1.207e+00  5.595e+03   0.000 0.999828    
+tdata.next_pymnt_d10/16/2010 -1.695e+00  5.595e+03   0.000 0.999758    
+tdata.next_pymnt_d10/18/2009 -1.809e+00  5.595e+03   0.000 0.999742    
+tdata.next_pymnt_d10/19/2009 -2.007e+00  5.595e+03   0.000 0.999714    
+tdata.next_pymnt_d10/19/2012  3.874e-01  4.842e+03   0.000 0.999936    
+tdata.next_pymnt_d10/2/2011  -2.968e+00  4.801e+03  -0.001 0.999507    
+tdata.next_pymnt_d10/2/2012   1.531e+00  5.595e+03   0.000 0.999782    
+tdata.next_pymnt_d10/2/2013  -2.100e+01  3.956e+03  -0.005 0.995765    
+tdata.next_pymnt_d10/20/2011  1.831e+00  5.595e+03   0.000 0.999739    
+tdata.next_pymnt_d10/21/2009 -2.110e+00  5.595e+03   0.000 0.999699    
+tdata.next_pymnt_d10/21/2011  1.994e+00  5.595e+03   0.000 0.999716    
+tdata.next_pymnt_d10/21/2012  2.462e+00  5.595e+03   0.000 0.999649    
+tdata.next_pymnt_d10/22/2011  3.612e+00  4.843e+03   0.001 0.999405    
+tdata.next_pymnt_d10/22/2012  2.763e+00  5.595e+03   0.000 0.999606    
+tdata.next_pymnt_d10/23/2012 -3.760e+00  5.595e+03  -0.001 0.999464    
+tdata.next_pymnt_d10/24/2010 -2.758e+00  5.595e+03   0.000 0.999607    
+tdata.next_pymnt_d10/25/2010 -2.353e+00  5.595e+03   0.000 0.999664    
+tdata.next_pymnt_d10/25/2012  3.935e+00  4.574e+03   0.001 0.999314    
+tdata.next_pymnt_d10/26/2011  4.336e+00  5.595e+03   0.001 0.999382    
+tdata.next_pymnt_d10/26/2012  2.396e+00  5.595e+03   0.000 0.999658    
+tdata.next_pymnt_d10/28/2009 -3.203e+00  5.595e+03  -0.001 0.999543    
+tdata.next_pymnt_d10/28/2010  3.306e+00  4.728e+03   0.001 0.999442    
+tdata.next_pymnt_d10/28/2011 -8.796e-02  5.595e+03   0.000 0.999987    
+tdata.next_pymnt_d10/28/2012 -1.440e+00  5.595e+03   0.000 0.999795    
+tdata.next_pymnt_d10/3/2010  -2.489e+00  5.595e+03   0.000 0.999645    
+tdata.next_pymnt_d10/3/2011  -5.885e+00  5.595e+03  -0.001 0.999161    
+tdata.next_pymnt_d10/3/2013  -2.101e+01  3.956e+03  -0.005 0.995762    
+tdata.next_pymnt_d10/4/2011   3.251e+00  5.595e+03   0.001 0.999536    
+tdata.next_pymnt_d10/4/2013  -2.101e+01  3.956e+03  -0.005 0.995763    
+tdata.next_pymnt_d10/6/2009  -1.188e+00  5.595e+03   0.000 0.999831    
+tdata.next_pymnt_d10/7/2010   1.414e+00  5.595e+03   0.000 0.999798    
+tdata.next_pymnt_d10/7/2011  -4.728e+00  5.595e+03  -0.001 0.999326    
+tdata.next_pymnt_d10/8/2012   4.684e+00  5.595e+03   0.001 0.999332    
+tdata.next_pymnt_d10/9/2009  -2.587e+00  5.595e+03   0.000 0.999631    
+tdata.next_pymnt_d10/9/2011  -1.712e+00  5.595e+03   0.000 0.999756    
+tdata.next_pymnt_d10/9/2012   2.242e-01  5.595e+03   0.000 0.999968    
+tdata.next_pymnt_d11/1/2011  -1.986e+00  4.757e+03   0.000 0.999667    
+tdata.next_pymnt_d11/10/2010  2.117e+00  5.595e+03   0.000 0.999698    
+tdata.next_pymnt_d11/11/2009 -3.098e+00  4.755e+03  -0.001 0.999480    
+tdata.next_pymnt_d11/11/2011 -4.105e+00  5.595e+03  -0.001 0.999415    
+tdata.next_pymnt_d11/12/2009 -1.713e+00  4.836e+03   0.000 0.999717    
+tdata.next_pymnt_d11/12/2012  3.254e-01  5.595e+03   0.000 0.999954    
+tdata.next_pymnt_d11/13/2012  1.066e+00  5.595e+03   0.000 0.999848    
+tdata.next_pymnt_d11/14/2012  3.516e+00  5.595e+03   0.001 0.999499    
+tdata.next_pymnt_d11/15/2009 -2.183e+00  5.595e+03   0.000 0.999689    
+tdata.next_pymnt_d11/16/2010  6.870e-01  5.595e+03   0.000 0.999902    
+tdata.next_pymnt_d11/16/2012  4.090e+00  5.595e+03   0.001 0.999417    
+tdata.next_pymnt_d11/17/2010 -6.965e-01  5.595e+03   0.000 0.999901    
+tdata.next_pymnt_d11/17/2012  1.419e+00  5.595e+03   0.000 0.999798    
+tdata.next_pymnt_d11/18/2010  9.329e-01  5.595e+03   0.000 0.999867    
+tdata.next_pymnt_d11/18/2011 -9.552e-01  5.595e+03   0.000 0.999864    
+tdata.next_pymnt_d11/19/2009 -1.713e+00  5.595e+03   0.000 0.999756    
+tdata.next_pymnt_d11/2/2012   4.769e+00  5.595e+03   0.001 0.999320    
+tdata.next_pymnt_d11/21/2011 -4.171e+00  5.595e+03  -0.001 0.999405    
+tdata.next_pymnt_d11/22/2012 -1.675e+00  5.595e+03   0.000 0.999761    
+tdata.next_pymnt_d11/23/2011 -3.049e+00  5.595e+03  -0.001 0.999565    
+tdata.next_pymnt_d11/23/2012  1.877e-01  4.801e+03   0.000 0.999969    
+tdata.next_pymnt_d11/25/2009  4.305e+00  5.595e+03   0.001 0.999386    
+tdata.next_pymnt_d11/27/2011  4.299e+00  5.595e+03   0.001 0.999387    
+tdata.next_pymnt_d11/28/2009 -2.876e+00  5.595e+03  -0.001 0.999590    
+tdata.next_pymnt_d11/28/2011 -7.633e-02  5.595e+03   0.000 0.999989    
+tdata.next_pymnt_d11/29/2010 -4.044e+00  5.595e+03  -0.001 0.999423    
+tdata.next_pymnt_d11/3/2009  -5.595e+00  5.595e+03  -0.001 0.999202    
+tdata.next_pymnt_d11/4/2009   3.337e-01  5.595e+03   0.000 0.999952    
+tdata.next_pymnt_d11/6/2009  -2.096e+00  5.595e+03   0.000 0.999701    
+tdata.next_pymnt_d11/6/2010   7.578e-01  4.315e+03   0.000 0.999860    
+tdata.next_pymnt_d11/6/2011  -3.969e+00  4.578e+03  -0.001 0.999308    
+tdata.next_pymnt_d11/7/2012   1.346e+00  5.595e+03   0.000 0.999808    
+tdata.next_pymnt_d11/8/2011  -3.454e-01  4.781e+03   0.000 0.999942    
+tdata.next_pymnt_d11/9/2009  -5.177e+00  5.595e+03  -0.001 0.999262    
+tdata.next_pymnt_d11/9/2010  -1.764e+00  4.798e+03   0.000 0.999707    
+tdata.next_pymnt_d12/1/2012   2.216e-01  5.595e+03   0.000 0.999968    
+tdata.next_pymnt_d12/10/2009 -4.747e+00  5.595e+03  -0.001 0.999323    
+tdata.next_pymnt_d12/10/2012 -8.800e-02  5.595e+03   0.000 0.999987    
+tdata.next_pymnt_d12/11/2009 -2.247e+00  5.595e+03   0.000 0.999680    
+tdata.next_pymnt_d12/11/2010  1.410e+00  4.612e+03   0.000 0.999756    
+tdata.next_pymnt_d12/12/2009 -2.203e-01  4.832e+03   0.000 0.999964    
+tdata.next_pymnt_d12/14/2008 -1.883e+00  5.595e+03   0.000 0.999731    
+tdata.next_pymnt_d12/15/2010  1.233e+00  5.595e+03   0.000 0.999824    
+tdata.next_pymnt_d12/16/2011 -1.804e+00  5.595e+03   0.000 0.999743    
+tdata.next_pymnt_d12/17/2011 -4.762e+00  5.595e+03  -0.001 0.999321    
+tdata.next_pymnt_d12/19/2010 -2.330e+00  5.595e+03   0.000 0.999668    
+tdata.next_pymnt_d12/2/2009  -6.808e+00  5.595e+03  -0.001 0.999029    
+tdata.next_pymnt_d12/2/2010   1.423e+00  4.551e+03   0.000 0.999751    
+tdata.next_pymnt_d12/20/2008 -2.441e+00  5.595e+03   0.000 0.999652    
+tdata.next_pymnt_d12/21/2008 -1.174e+00  4.757e+03   0.000 0.999803    
+tdata.next_pymnt_d12/21/2009 -2.660e+00  5.595e+03   0.000 0.999621    
+tdata.next_pymnt_d12/21/2010 -3.220e-01  5.595e+03   0.000 0.999954    
+tdata.next_pymnt_d12/21/2011  2.291e+00  5.595e+03   0.000 0.999673    
+tdata.next_pymnt_d12/23/2011 -3.491e+00  5.595e+03  -0.001 0.999502    
+tdata.next_pymnt_d12/24/2008 -3.668e+00  5.595e+03  -0.001 0.999477    
+tdata.next_pymnt_d12/25/2011 -4.319e-02  5.595e+03   0.000 0.999994    
+tdata.next_pymnt_d12/26/2009 -7.726e-01  4.737e+03   0.000 0.999870    
+tdata.next_pymnt_d12/26/2010 -2.214e+00  5.595e+03   0.000 0.999684    
+tdata.next_pymnt_d12/27/2008 -2.497e+00  5.595e+03   0.000 0.999644    
+tdata.next_pymnt_d12/27/2010 -2.564e+00  5.595e+03   0.000 0.999634    
+tdata.next_pymnt_d12/28/2010  3.263e+00  5.595e+03   0.001 0.999535    
+tdata.next_pymnt_d12/28/2011 -5.040e+00  4.839e+03  -0.001 0.999169    
+tdata.next_pymnt_d12/3/2011  -6.076e-01  5.595e+03   0.000 0.999913    
+tdata.next_pymnt_d12/3/2012   7.391e-01  4.769e+03   0.000 0.999876    
+tdata.next_pymnt_d12/5/2012   1.683e+00  5.595e+03   0.000 0.999760    
+tdata.next_pymnt_d12/8/2010   9.484e-01  5.595e+03   0.000 0.999865    
+tdata.next_pymnt_d12/8/2011  -6.709e-01  5.595e+03   0.000 0.999904    
+tdata.next_pymnt_d12/8/2012   2.003e+00  5.595e+03   0.000 0.999714    
+tdata.next_pymnt_d12/9/2011   3.289e-01  5.595e+03   0.000 0.999953    
+tdata.next_pymnt_d2/1/2010   -2.987e+00  5.595e+03  -0.001 0.999574    
+tdata.next_pymnt_d2/1/2011   -2.116e+00  5.595e+03   0.000 0.999698    
+tdata.next_pymnt_d2/1/2012    4.659e-01  5.595e+03   0.000 0.999934    
+tdata.next_pymnt_d2/11/2011  -4.299e-01  5.595e+03   0.000 0.999939    
+tdata.next_pymnt_d2/13/2011  -1.711e+00  5.595e+03   0.000 0.999756    
+tdata.next_pymnt_d2/13/2012  -1.630e+00  5.595e+03   0.000 0.999767    
+tdata.next_pymnt_d2/14/2013  -1.043e+00  5.595e+03   0.000 0.999851    
+tdata.next_pymnt_d2/18/2010   2.683e-01  5.595e+03   0.000 0.999962    
+tdata.next_pymnt_d2/18/2012   1.332e+00  5.595e+03   0.000 0.999810    
+tdata.next_pymnt_d2/19/2010   1.582e+00  5.595e+03   0.000 0.999774    
+tdata.next_pymnt_d2/20/2012  -4.553e+00  5.595e+03  -0.001 0.999351    
+tdata.next_pymnt_d2/21/2011   1.399e+00  4.532e+03   0.000 0.999754    
+tdata.next_pymnt_d2/21/2013   4.655e+00  5.595e+03   0.001 0.999336    
+tdata.next_pymnt_d2/22/2011   2.200e+00  5.595e+03   0.000 0.999686    
+tdata.next_pymnt_d2/23/2013   5.469e-01  4.823e+03   0.000 0.999910    
+tdata.next_pymnt_d2/24/2012   2.249e+00  5.595e+03   0.000 0.999679    
+tdata.next_pymnt_d2/25/2013   2.882e-01  5.595e+03   0.000 0.999959    
+tdata.next_pymnt_d2/27/2011   4.473e+00  4.645e+03   0.001 0.999232    
+tdata.next_pymnt_d2/28/2011   9.911e-01  5.595e+03   0.000 0.999859    
+tdata.next_pymnt_d2/28/2012   2.029e+00  4.350e+03   0.000 0.999628    
+tdata.next_pymnt_d2/28/2013   4.619e-03  4.813e+03   0.000 0.999999    
+tdata.next_pymnt_d2/5/2011   -3.556e+00  5.595e+03  -0.001 0.999493    
+tdata.next_pymnt_d2/8/2011   -6.489e+00  5.595e+03  -0.001 0.999075    
+tdata.next_pymnt_d2/9/2011   -2.519e+00  5.595e+03   0.000 0.999641    
+tdata.next_pymnt_d3/1/2010   -8.632e-01  5.595e+03   0.000 0.999877    
+tdata.next_pymnt_d3/1/2013    3.088e+00  5.595e+03   0.001 0.999560    
+tdata.next_pymnt_d3/11/2012  -1.633e+00  4.496e+03   0.000 0.999710    
+tdata.next_pymnt_d3/12/2010   4.022e-01  5.595e+03   0.000 0.999943    
+tdata.next_pymnt_d3/12/2012   5.793e+00  5.595e+03   0.001 0.999174    
+tdata.next_pymnt_d3/12/2013   5.161e+00  5.595e+03   0.001 0.999264    
+tdata.next_pymnt_d3/13/2010  -2.483e+00  5.595e+03   0.000 0.999646    
+tdata.next_pymnt_d3/13/2012   4.029e+00  5.595e+03   0.001 0.999425    
+tdata.next_pymnt_d3/13/2013  -2.020e+00  5.595e+03   0.000 0.999712    
+tdata.next_pymnt_d3/14/2012  -1.162e+00  5.595e+03   0.000 0.999834    
+tdata.next_pymnt_d3/15/2010   3.984e-01  5.595e+03   0.000 0.999943    
+tdata.next_pymnt_d3/15/2012   5.723e+00  5.595e+03   0.001 0.999184    
+tdata.next_pymnt_d3/16/2011   4.092e+00  4.392e+03   0.001 0.999257    
+tdata.next_pymnt_d3/17/2011  -7.309e+00  5.595e+03  -0.001 0.998958    
+tdata.next_pymnt_d3/17/2012  -2.756e+00  5.595e+03   0.000 0.999607    
+tdata.next_pymnt_d3/18/2010   7.736e-02  5.595e+03   0.000 0.999989    
+tdata.next_pymnt_d3/18/2011   2.874e+00  4.716e+03   0.001 0.999514    
+tdata.next_pymnt_d3/18/2012   4.965e+00  5.595e+03   0.001 0.999292    
+tdata.next_pymnt_d3/19/2010  -7.426e-01  5.595e+03   0.000 0.999894    
+tdata.next_pymnt_d3/19/2011  -6.414e+00  5.595e+03  -0.001 0.999085    
+tdata.next_pymnt_d3/19/2013   2.037e+00  5.595e+03   0.000 0.999709    
+tdata.next_pymnt_d3/21/2011   1.020e+00  5.595e+03   0.000 0.999855    
+tdata.next_pymnt_d3/21/2013  -7.276e-01  5.595e+03   0.000 0.999896    
+tdata.next_pymnt_d3/23/2013   1.902e+00  4.839e+03   0.000 0.999686    
+tdata.next_pymnt_d3/24/2011  -1.861e+00  5.595e+03   0.000 0.999735    
+tdata.next_pymnt_d3/24/2012  -3.589e+00  4.839e+03  -0.001 0.999408    
+tdata.next_pymnt_d3/25/2011  -3.168e+00  5.595e+03  -0.001 0.999548    
+tdata.next_pymnt_d3/25/2012  -6.199e-01  5.595e+03   0.000 0.999912    
+tdata.next_pymnt_d3/25/2013   3.940e-01  5.595e+03   0.000 0.999944    
+tdata.next_pymnt_d3/27/2011   2.466e+00  5.595e+03   0.000 0.999648    
+tdata.next_pymnt_d3/27/2012  -1.098e+00  4.839e+03   0.000 0.999819    
+tdata.next_pymnt_d3/28/2010   1.107e+00  4.694e+03   0.000 0.999812    
+tdata.next_pymnt_d3/28/2011  -2.747e-01  4.113e+03   0.000 0.999947    
+tdata.next_pymnt_d3/28/2013   1.198e+00  5.595e+03   0.000 0.999829    
+tdata.next_pymnt_d3/3/2010   -2.870e+00  5.595e+03  -0.001 0.999591    
+tdata.next_pymnt_d3/3/2011   -8.109e-01  4.808e+03   0.000 0.999865    
+tdata.next_pymnt_d3/4/2010   -1.821e+00  5.595e+03   0.000 0.999740    
+tdata.next_pymnt_d3/6/2011   -1.758e+00  5.595e+03   0.000 0.999749    
+tdata.next_pymnt_d3/7/2010   -1.324e+00  5.595e+03   0.000 0.999811    
+tdata.next_pymnt_d3/8/2011    6.316e+00  5.595e+03   0.001 0.999099    
+tdata.next_pymnt_d3/8/2012    2.511e+00  5.595e+03   0.000 0.999642    
+tdata.next_pymnt_d3/8/2013    2.946e+00  4.670e+03   0.001 0.999497    
+tdata.next_pymnt_d3/9/2013    4.779e-02  5.595e+03   0.000 0.999993    
+tdata.next_pymnt_d4/1/2011   -3.965e+00  5.595e+03  -0.001 0.999434    
+tdata.next_pymnt_d4/10/2011   8.604e-01  5.595e+03   0.000 0.999877    
+tdata.next_pymnt_d4/10/2012   1.671e+00  5.595e+03   0.000 0.999762    
+tdata.next_pymnt_d4/10/2013   4.738e+00  4.552e+03   0.001 0.999169    
+tdata.next_pymnt_d4/11/2012  -3.046e+00  5.595e+03  -0.001 0.999566    
+tdata.next_pymnt_d4/12/2012   1.078e+00  5.595e+03   0.000 0.999846    
+tdata.next_pymnt_d4/13/2011  -6.641e+00  5.595e+03  -0.001 0.999053    
+tdata.next_pymnt_d4/13/2012  -1.168e+00  5.595e+03   0.000 0.999833    
+tdata.next_pymnt_d4/17/2013   3.729e+00  5.595e+03   0.001 0.999468    
+tdata.next_pymnt_d4/18/2012   3.146e+00  5.595e+03   0.001 0.999551    
+tdata.next_pymnt_d4/19/2013   5.561e+00  5.595e+03   0.001 0.999207    
+tdata.next_pymnt_d4/2/2012    4.212e+00  5.595e+03   0.001 0.999399    
+tdata.next_pymnt_d4/20/2010  -3.477e+00  5.595e+03  -0.001 0.999504    
+tdata.next_pymnt_d4/20/2013   1.493e+00  5.595e+03   0.000 0.999787    
+tdata.next_pymnt_d4/21/2012   2.229e+00  5.595e+03   0.000 0.999682    
+tdata.next_pymnt_d4/22/2011   4.192e+00  5.595e+03   0.001 0.999402    
+tdata.next_pymnt_d4/22/2013   4.295e+00  4.655e+03   0.001 0.999264    
+tdata.next_pymnt_d4/23/2011   7.966e-01  4.728e+03   0.000 0.999866    
+tdata.next_pymnt_d4/23/2012   4.299e+00  4.623e+03   0.001 0.999258    
+tdata.next_pymnt_d4/23/2013   3.303e-01  5.595e+03   0.000 0.999953    
+tdata.next_pymnt_d4/24/2011  -1.733e+00  4.505e+03   0.000 0.999693    
+tdata.next_pymnt_d4/24/2012   2.350e+00  4.800e+03   0.000 0.999609    
+tdata.next_pymnt_d4/26/2011  -4.424e+00  5.595e+03  -0.001 0.999369    
+tdata.next_pymnt_d4/26/2012   1.706e+00  4.393e+03   0.000 0.999690    
+tdata.next_pymnt_d4/27/2011   1.946e+00  4.443e+03   0.000 0.999651    
+tdata.next_pymnt_d4/27/2012  -1.809e+00  5.595e+03   0.000 0.999742    
+tdata.next_pymnt_d4/28/2011   1.585e+00  4.382e+03   0.000 0.999711    
+tdata.next_pymnt_d4/28/2012  -2.685e-01  4.382e+03   0.000 0.999951    
+tdata.next_pymnt_d4/28/2013   1.936e+00  5.595e+03   0.000 0.999724    
+tdata.next_pymnt_d4/3/2013    2.851e+00  5.595e+03   0.001 0.999593    
+tdata.next_pymnt_d4/4/2011   -1.073e+00  5.595e+03   0.000 0.999847    
+tdata.next_pymnt_d4/4/2012   -1.967e+00  5.595e+03   0.000 0.999719    
+tdata.next_pymnt_d4/5/2011    2.271e+00  5.595e+03   0.000 0.999676    
+tdata.next_pymnt_d4/6/2012    6.809e-01  5.595e+03   0.000 0.999903    
+tdata.next_pymnt_d4/7/2010    2.140e+00  4.558e+03   0.000 0.999625    
+tdata.next_pymnt_d4/7/2012   -2.485e+00  5.595e+03   0.000 0.999646    
+tdata.next_pymnt_d4/7/2013   -1.795e-02  5.595e+03   0.000 0.999997    
+tdata.next_pymnt_d4/8/2013    5.367e+00  5.595e+03   0.001 0.999235    
+tdata.next_pymnt_d4/9/2011    4.631e+00  5.595e+03   0.001 0.999340    
+tdata.next_pymnt_d5/1/2011   -3.811e-01  4.333e+03   0.000 0.999930    
+tdata.next_pymnt_d5/1/2012    5.400e+00  5.595e+03   0.001 0.999230    
+tdata.next_pymnt_d5/1/2013    2.347e+00  5.595e+03   0.000 0.999665    
+tdata.next_pymnt_d5/10/2012   1.028e+00  4.780e+03   0.000 0.999828    
+tdata.next_pymnt_d5/11/2012   4.998e+00  4.824e+03   0.001 0.999173    
+tdata.next_pymnt_d5/12/2011   5.579e+00  5.595e+03   0.001 0.999204    
+tdata.next_pymnt_d5/12/2012   8.730e-01  4.798e+03   0.000 0.999855    
+tdata.next_pymnt_d5/13/2011  -1.975e+00  5.595e+03   0.000 0.999718    
+tdata.next_pymnt_d5/13/2012   4.649e+00  5.595e+03   0.001 0.999337    
+tdata.next_pymnt_d5/15/2013  -1.460e+00  5.595e+03   0.000 0.999792    
+tdata.next_pymnt_d5/16/2009   1.437e-01  5.595e+03   0.000 0.999980    
+tdata.next_pymnt_d5/16/2011  -5.524e-01  4.429e+03   0.000 0.999900    
+tdata.next_pymnt_d5/16/2012   2.955e+00  5.595e+03   0.001 0.999579    
+tdata.next_pymnt_d5/16/2013   3.836e+00  5.595e+03   0.001 0.999453    
+tdata.next_pymnt_d5/19/2009  -4.280e+00  5.595e+03  -0.001 0.999390    
+tdata.next_pymnt_d5/19/2010   7.388e-01  5.595e+03   0.000 0.999895    
+tdata.next_pymnt_d5/19/2011   2.256e+00  4.727e+03   0.000 0.999619    
+tdata.next_pymnt_d5/19/2013   8.966e-01  4.839e+03   0.000 0.999852    
+tdata.next_pymnt_d5/2/2012   -3.754e+00  5.595e+03  -0.001 0.999465    
+tdata.next_pymnt_d5/2/2013    1.100e+00  5.595e+03   0.000 0.999843    
+tdata.next_pymnt_d5/20/2012   3.961e+00  5.595e+03   0.001 0.999435    
+tdata.next_pymnt_d5/21/2010  -4.372e-02  5.595e+03   0.000 0.999994    
+tdata.next_pymnt_d5/21/2011   9.831e-01  4.477e+03   0.000 0.999825    
+tdata.next_pymnt_d5/21/2013   1.518e+00  4.803e+03   0.000 0.999748    
+tdata.next_pymnt_d5/22/2011   4.791e+00  5.595e+03   0.001 0.999317    
+tdata.next_pymnt_d5/22/2013   1.009e+00  5.595e+03   0.000 0.999856    
+tdata.next_pymnt_d5/23/2010   7.176e-01  5.595e+03   0.000 0.999898    
+tdata.next_pymnt_d5/24/2013   2.842e+00  5.595e+03   0.001 0.999595    
+tdata.next_pymnt_d5/25/2011   1.627e+00  5.595e+03   0.000 0.999768    
+tdata.next_pymnt_d5/26/2012   3.614e+00  5.595e+03   0.001 0.999485    
+tdata.next_pymnt_d5/26/2013   5.227e+00  5.595e+03   0.001 0.999255    
+tdata.next_pymnt_d5/28/2012   6.437e-01  5.595e+03   0.000 0.999908    
+tdata.next_pymnt_d5/28/2013   7.733e-01  4.690e+03   0.000 0.999868    
+tdata.next_pymnt_d5/3/2011   -2.204e-02  5.595e+03   0.000 0.999997    
+tdata.next_pymnt_d5/3/2013    4.820e-01  5.595e+03   0.000 0.999931    
+tdata.next_pymnt_d5/4/2010   -6.981e+00  5.595e+03  -0.001 0.999005    
+tdata.next_pymnt_d5/4/2011    3.238e+00  4.758e+03   0.001 0.999457    
+tdata.next_pymnt_d5/4/2012    3.800e+00  5.595e+03   0.001 0.999458    
+tdata.next_pymnt_d5/5/2011   -2.914e+00  5.595e+03  -0.001 0.999584    
+tdata.next_pymnt_d5/6/2013    2.386e+00  5.595e+03   0.000 0.999660    
+tdata.next_pymnt_d5/7/2011    2.035e+00  4.712e+03   0.000 0.999656    
+tdata.next_pymnt_d5/8/2011    9.257e-01  5.595e+03   0.000 0.999868    
+tdata.next_pymnt_d5/8/2013    1.864e+00  5.595e+03   0.000 0.999734    
+tdata.next_pymnt_d5/9/2010   -8.289e+00  5.595e+03  -0.001 0.998818    
+tdata.next_pymnt_d5/9/2012    2.331e+00  5.595e+03   0.000 0.999668    
+tdata.next_pymnt_d5/9/2013    9.997e-01  5.595e+03   0.000 0.999857    
+tdata.next_pymnt_d6/1/2012    2.953e+00  5.595e+03   0.001 0.999579    
+tdata.next_pymnt_d6/10/2010  -3.387e+00  5.595e+03  -0.001 0.999517    
+tdata.next_pymnt_d6/10/2011   6.907e-01  5.595e+03   0.000 0.999902    
+tdata.next_pymnt_d6/10/2013   5.207e+00  5.595e+03   0.001 0.999258    
+tdata.next_pymnt_d6/11/2013  -7.037e-01  5.595e+03   0.000 0.999900    
+tdata.next_pymnt_d6/12/2010   2.777e+00  5.595e+03   0.000 0.999604    
+tdata.next_pymnt_d6/13/2011   1.773e+00  4.485e+03   0.000 0.999684    
+tdata.next_pymnt_d6/13/2013   3.445e-01  5.595e+03   0.000 0.999951    
+tdata.next_pymnt_d6/14/2008   1.209e+00  5.595e+03   0.000 0.999828    
+tdata.next_pymnt_d6/14/2011   1.300e+00  5.595e+03   0.000 0.999815    
+tdata.next_pymnt_d6/14/2013  -6.571e-01  5.595e+03   0.000 0.999906    
+tdata.next_pymnt_d6/15/2012   2.244e-01  5.595e+03   0.000 0.999968    
+tdata.next_pymnt_d6/15/2013  -1.446e+00  5.595e+03   0.000 0.999794    
+tdata.next_pymnt_d6/16/2011   8.885e-01  5.595e+03   0.000 0.999873    
+tdata.next_pymnt_d6/18/2013  -1.951e+00  5.595e+03   0.000 0.999722    
+tdata.next_pymnt_d6/19/2012   4.834e+00  4.681e+03   0.001 0.999176    
+tdata.next_pymnt_d6/19/2013  -8.018e-01  5.595e+03   0.000 0.999886    
+tdata.next_pymnt_d6/2/2011   -2.700e+00  5.595e+03   0.000 0.999615    
+tdata.next_pymnt_d6/2/2012   -2.698e-01  5.595e+03   0.000 0.999962    
+tdata.next_pymnt_d6/20/2012   4.704e+00  5.595e+03   0.001 0.999329    
+tdata.next_pymnt_d6/21/2010  -2.735e+00  5.595e+03   0.000 0.999610    
+tdata.next_pymnt_d6/21/2013   9.078e-01  5.595e+03   0.000 0.999871    
+tdata.next_pymnt_d6/22/2012  -3.556e-01  5.595e+03   0.000 0.999949    
+tdata.next_pymnt_d6/22/2013  -1.129e+00  5.595e+03   0.000 0.999839    
+tdata.next_pymnt_d6/24/2013   3.091e+00  5.595e+03   0.001 0.999559    
+tdata.next_pymnt_d6/25/2011  -5.961e-01  5.595e+03   0.000 0.999915    
+tdata.next_pymnt_d6/25/2012   2.302e+00  4.302e+03   0.001 0.999573    
+tdata.next_pymnt_d6/26/2011  -9.942e-01  5.595e+03   0.000 0.999858    
+tdata.next_pymnt_d6/26/2012  -3.338e-01  5.595e+03   0.000 0.999952    
+tdata.next_pymnt_d6/26/2013   1.400e+00  5.595e+03   0.000 0.999800    
+tdata.next_pymnt_d6/27/2010  -4.058e+00  5.595e+03  -0.001 0.999421    
+tdata.next_pymnt_d6/28/2011   4.000e+00  4.435e+03   0.001 0.999280    
+tdata.next_pymnt_d6/28/2013   2.603e+00  5.595e+03   0.000 0.999629    
+tdata.next_pymnt_d6/3/2011   -6.184e-01  5.595e+03   0.000 0.999912    
+tdata.next_pymnt_d6/3/2013   -1.024e-01  5.595e+03   0.000 0.999985    
+tdata.next_pymnt_d6/4/2011   -2.260e-01  5.595e+03   0.000 0.999968    
+tdata.next_pymnt_d6/4/2013    5.078e-01  5.595e+03   0.000 0.999928    
+tdata.next_pymnt_d6/5/2011    9.864e-01  5.595e+03   0.000 0.999859    
+tdata.next_pymnt_d6/5/2012    2.965e+00  5.595e+03   0.001 0.999577    
+tdata.next_pymnt_d6/6/2011   -4.774e+00  5.595e+03  -0.001 0.999319    
+tdata.next_pymnt_d6/6/2012   -1.188e+00  5.595e+03   0.000 0.999831    
+tdata.next_pymnt_d6/6/2013    2.167e+00  4.808e+03   0.000 0.999640    
+tdata.next_pymnt_d6/7/2011    6.837e-01  4.840e+03   0.000 0.999887    
+tdata.next_pymnt_d6/7/2013    1.944e+00  5.595e+03   0.000 0.999723    
+tdata.next_pymnt_d6/8/2010    2.325e+00  4.395e+03   0.001 0.999578    
+tdata.next_pymnt_d6/9/2011   -8.843e-01  4.781e+03   0.000 0.999852    
+tdata.next_pymnt_d6/9/2012   -7.138e-01  5.595e+03   0.000 0.999898    
+tdata.next_pymnt_d7/1/2013    1.041e+00  4.831e+03   0.000 0.999828    
+tdata.next_pymnt_d7/10/2011   5.142e-01  5.595e+03   0.000 0.999927    
+tdata.next_pymnt_d7/10/2012   3.407e-01  4.713e+03   0.000 0.999942    
+tdata.next_pymnt_d7/11/2009  -2.890e+00  5.595e+03  -0.001 0.999588    
+tdata.next_pymnt_d7/12/2013   3.756e+00  5.595e+03   0.001 0.999464    
+tdata.next_pymnt_d7/14/2011   3.586e+00  4.845e+03   0.001 0.999409    
+tdata.next_pymnt_d7/14/2012  -1.914e+00  5.595e+03   0.000 0.999727    
+tdata.next_pymnt_d7/16/2011   1.278e+00  5.595e+03   0.000 0.999818    
+tdata.next_pymnt_d7/16/2012   1.613e+00  4.797e+03   0.000 0.999732    
+tdata.next_pymnt_d7/17/2010   1.412e+00  4.703e+03   0.000 0.999760    
+tdata.next_pymnt_d7/17/2011  -3.774e-01  5.595e+03   0.000 0.999946    
+tdata.next_pymnt_d7/17/2012   3.199e-02  5.595e+03   0.000 0.999995    
+tdata.next_pymnt_d7/18/2010   5.680e-01  5.595e+03   0.000 0.999919    
+tdata.next_pymnt_d7/18/2011   1.571e+00  5.595e+03   0.000 0.999776    
+tdata.next_pymnt_d7/19/2013  -7.928e-01  5.595e+03   0.000 0.999887    
+tdata.next_pymnt_d7/2/2011    4.027e+00  5.595e+03   0.001 0.999426    
+tdata.next_pymnt_d7/2/2012   -3.220e-01  5.595e+03   0.000 0.999954    
+tdata.next_pymnt_d7/20/2012   1.876e+00  4.743e+03   0.000 0.999685    
+tdata.next_pymnt_d7/22/2010   7.470e-02  5.595e+03   0.000 0.999989    
+tdata.next_pymnt_d7/22/2012  -3.215e+00  4.824e+03  -0.001 0.999468    
+tdata.next_pymnt_d7/23/2011  -4.810e+00  5.595e+03  -0.001 0.999314    
+tdata.next_pymnt_d7/24/2011   1.378e+00  5.595e+03   0.000 0.999804    
+tdata.next_pymnt_d7/25/2011   9.783e-01  5.595e+03   0.000 0.999860    
+tdata.next_pymnt_d7/26/2011   2.429e+00  4.523e+03   0.001 0.999572    
+tdata.next_pymnt_d7/27/2012   4.723e+00  5.595e+03   0.001 0.999326    
+tdata.next_pymnt_d7/28/2010  -4.459e-01  5.595e+03   0.000 0.999936    
+tdata.next_pymnt_d7/28/2011  -8.084e-01  5.595e+03   0.000 0.999885    
+tdata.next_pymnt_d7/28/2013   2.976e+00  4.386e+03   0.001 0.999459    
+tdata.next_pymnt_d7/3/2012    2.530e+00  5.595e+03   0.000 0.999639    
+tdata.next_pymnt_d7/5/2011    2.374e+00  5.595e+03   0.000 0.999661    
+tdata.next_pymnt_d7/7/2010   -2.598e+00  5.595e+03   0.000 0.999630    
+tdata.next_pymnt_d7/7/2013    3.963e-01  5.595e+03   0.000 0.999943    
+tdata.next_pymnt_d7/8/2011    1.379e+00  4.802e+03   0.000 0.999771    
+tdata.next_pymnt_d7/8/2012    2.073e+00  5.595e+03   0.000 0.999704    
+tdata.next_pymnt_d8/1/2009   -4.203e-01  5.595e+03   0.000 0.999940    
+tdata.next_pymnt_d8/1/2011    9.577e-02  5.595e+03   0.000 0.999986    
+tdata.next_pymnt_d8/1/2013    3.356e+00  5.595e+03   0.001 0.999521    
+tdata.next_pymnt_d8/10/2011   3.629e+00  5.595e+03   0.001 0.999483    
+tdata.next_pymnt_d8/11/2011   4.097e+00  5.595e+03   0.001 0.999416    
+tdata.next_pymnt_d8/12/2010  -4.444e+00  5.595e+03  -0.001 0.999366    
+tdata.next_pymnt_d8/13/2010  -2.726e+00  5.595e+03   0.000 0.999611    
+tdata.next_pymnt_d8/13/2012  -2.918e+00  5.595e+03  -0.001 0.999584    
+tdata.next_pymnt_d8/14/2010   1.105e+00  5.595e+03   0.000 0.999842    
+tdata.next_pymnt_d8/14/2011   1.356e+00  5.595e+03   0.000 0.999807    
+tdata.next_pymnt_d8/15/2012  -4.114e-01  5.595e+03   0.000 0.999941    
+tdata.next_pymnt_d8/16/2011   5.079e+00  5.595e+03   0.001 0.999276    
+tdata.next_pymnt_d8/17/2011  -4.595e-01  4.629e+03   0.000 0.999921    
+tdata.next_pymnt_d8/18/2011   1.671e-01  5.595e+03   0.000 0.999976    
+tdata.next_pymnt_d8/18/2012   3.438e-01  5.595e+03   0.000 0.999951    
+tdata.next_pymnt_d8/18/2013   1.238e+00  5.595e+03   0.000 0.999823    
+tdata.next_pymnt_d8/19/2011   2.279e+00  5.595e+03   0.000 0.999675    
+tdata.next_pymnt_d8/20/2011   9.009e-01  5.595e+03   0.000 0.999872    
+tdata.next_pymnt_d8/22/2010  -2.820e+00  5.595e+03  -0.001 0.999598    
+tdata.next_pymnt_d8/23/2010  -5.208e+00  5.595e+03  -0.001 0.999257    
+tdata.next_pymnt_d8/23/2011   4.354e+00  5.595e+03   0.001 0.999379    
+tdata.next_pymnt_d8/23/2013  -2.806e-01  5.595e+03   0.000 0.999960    
+tdata.next_pymnt_d8/24/2011   4.497e+00  4.687e+03   0.001 0.999234    
+tdata.next_pymnt_d8/25/2011  -3.335e+00  5.595e+03  -0.001 0.999524    
+tdata.next_pymnt_d8/25/2013   9.570e-03  5.595e+03   0.000 0.999999    
+tdata.next_pymnt_d8/28/2009  -2.664e+00  5.595e+03   0.000 0.999620    
+tdata.next_pymnt_d8/28/2010  -2.253e+00  4.768e+03   0.000 0.999623    
+tdata.next_pymnt_d8/28/2012  -1.849e+00  5.595e+03   0.000 0.999736    
+tdata.next_pymnt_d8/29/2013   3.968e+00  4.341e+03   0.001 0.999271    
+tdata.next_pymnt_d8/30/2013   2.935e+00  5.595e+03   0.001 0.999581    
+tdata.next_pymnt_d8/4/2011    1.757e+00  4.580e+03   0.000 0.999694    
+tdata.next_pymnt_d8/5/2010   -2.706e+00  5.595e+03   0.000 0.999614    
+tdata.next_pymnt_d8/5/2012    6.406e+00  5.595e+03   0.001 0.999086    
+tdata.next_pymnt_d8/6/2010   -3.164e-01  5.595e+03   0.000 0.999955    
+tdata.next_pymnt_d8/7/2009   -9.136e-01  5.595e+03   0.000 0.999870    
+tdata.next_pymnt_d8/7/2011   -3.233e-01  5.595e+03   0.000 0.999954    
+tdata.next_pymnt_d8/7/2012    6.898e+00  4.705e+03   0.001 0.998830    
+tdata.next_pymnt_d8/7/2013    3.758e-01  5.595e+03   0.000 0.999946    
+tdata.next_pymnt_d8/8/2012   -2.528e+00  4.759e+03  -0.001 0.999576    
+tdata.next_pymnt_d8/8/2013    1.084e+00  5.595e+03   0.000 0.999845    
+tdata.next_pymnt_d8/9/2009    1.359e+00  5.595e+03   0.000 0.999806    
+tdata.next_pymnt_d8/9/2011    4.084e+00  4.833e+03   0.001 0.999326    
+tdata.next_pymnt_d9/1/2010    8.731e+00  5.595e+03   0.002 0.998755    
+tdata.next_pymnt_d9/1/2011    1.066e+01  5.595e+03   0.002 0.998480    
+tdata.next_pymnt_d9/10/2013  -2.087e+01  3.956e+03  -0.005 0.995792    
+tdata.next_pymnt_d9/11/2009  -1.962e+00  5.595e+03   0.000 0.999720    
+tdata.next_pymnt_d9/11/2012   3.994e-01  5.595e+03   0.000 0.999943    
+tdata.next_pymnt_d9/11/2013  -2.150e+01  3.956e+03  -0.005 0.995664    
+tdata.next_pymnt_d9/12/2010  -3.148e+00  5.595e+03  -0.001 0.999551    
+tdata.next_pymnt_d9/12/2011  -3.852e+00  5.595e+03  -0.001 0.999451    
+tdata.next_pymnt_d9/12/2012   2.526e-01  5.595e+03   0.000 0.999964    
+tdata.next_pymnt_d9/12/2013  -2.163e+01  3.956e+03  -0.005 0.995637    
+tdata.next_pymnt_d9/13/2012   5.133e-01  4.838e+03   0.000 0.999915    
+tdata.next_pymnt_d9/13/2013  -2.135e+01  3.956e+03  -0.005 0.995695    
+tdata.next_pymnt_d9/14/2013  -2.129e+01  3.956e+03  -0.005 0.995706    
+tdata.next_pymnt_d9/15/2013  -2.095e+01  3.956e+03  -0.005 0.995775    
+tdata.next_pymnt_d9/16/2011  -3.091e-02  5.595e+03   0.000 0.999996    
+tdata.next_pymnt_d9/16/2013  -2.117e+01  3.956e+03  -0.005 0.995730    
+tdata.next_pymnt_d9/17/2011  -8.342e-02  5.595e+03   0.000 0.999988    
+tdata.next_pymnt_d9/17/2012   4.753e+00  4.269e+03   0.001 0.999112    
+tdata.next_pymnt_d9/17/2013  -2.172e+01  3.956e+03  -0.005 0.995620    
+tdata.next_pymnt_d9/18/2013  -2.091e+01  3.956e+03  -0.005 0.995783    
+tdata.next_pymnt_d9/19/2012  -1.349e+00  5.595e+03   0.000 0.999808    
+tdata.next_pymnt_d9/19/2013  -2.193e+01  3.956e+03  -0.006 0.995577    
+tdata.next_pymnt_d9/2/2009   -1.710e+00  5.595e+03   0.000 0.999756    
+tdata.next_pymnt_d9/2/2011   -3.699e+00  5.595e+03  -0.001 0.999472    
+tdata.next_pymnt_d9/2/2013    2.962e+00  5.595e+03   0.001 0.999578    
+tdata.next_pymnt_d9/20/2011  -2.524e+00  5.595e+03   0.000 0.999640    
+tdata.next_pymnt_d9/20/2012  -1.090e+00  5.595e+03   0.000 0.999845    
+tdata.next_pymnt_d9/20/2013  -2.190e+01  3.956e+03  -0.006 0.995584    
+tdata.next_pymnt_d9/21/2009   3.595e+00  5.595e+03   0.001 0.999487    
+tdata.next_pymnt_d9/21/2013  -2.206e+01  3.956e+03  -0.006 0.995551    
+tdata.next_pymnt_d9/22/2011   3.145e+00  4.340e+03   0.001 0.999422    
+tdata.next_pymnt_d9/22/2013  -2.149e+01  3.956e+03  -0.005 0.995667    
+tdata.next_pymnt_d9/23/2009   8.971e-01  5.595e+03   0.000 0.999872    
+tdata.next_pymnt_d9/23/2013  -2.146e+01  3.956e+03  -0.005 0.995672    
+tdata.next_pymnt_d9/24/2011  -1.530e+00  5.595e+03   0.000 0.999782    
+tdata.next_pymnt_d9/24/2013  -2.083e+01  3.956e+03  -0.005 0.995799    
+tdata.next_pymnt_d9/25/2009   1.330e+00  5.595e+03   0.000 0.999810    
+tdata.next_pymnt_d9/25/2013  -2.106e+01  3.956e+03  -0.005 0.995752    
+tdata.next_pymnt_d9/26/2010  -2.288e+00  5.595e+03   0.000 0.999674    
+tdata.next_pymnt_d9/26/2011  -2.935e-01  5.595e+03   0.000 0.999958    
+tdata.next_pymnt_d9/26/2012   3.630e+00  5.595e+03   0.001 0.999482    
+tdata.next_pymnt_d9/26/2013  -2.120e+01  3.956e+03  -0.005 0.995725    
+tdata.next_pymnt_d9/27/2011  -1.963e+00  5.595e+03   0.000 0.999720    
+tdata.next_pymnt_d9/27/2012   1.241e+00  5.595e+03   0.000 0.999823    
+tdata.next_pymnt_d9/27/2013  -2.078e+01  3.956e+03  -0.005 0.995809    
+tdata.next_pymnt_d9/28/2010   4.935e+00  5.595e+03   0.001 0.999296    
+tdata.next_pymnt_d9/28/2011   4.961e-01  4.155e+03   0.000 0.999905    
+tdata.next_pymnt_d9/28/2012  -5.197e-01  5.595e+03   0.000 0.999926    
+tdata.next_pymnt_d9/28/2013  -2.131e+01  3.956e+03  -0.005 0.995703    
+tdata.next_pymnt_d9/29/2013  -2.144e+01  3.956e+03  -0.005 0.995676    
+tdata.next_pymnt_d9/3/2011    3.083e+00  4.745e+03   0.001 0.999482    
+tdata.next_pymnt_d9/3/2012    2.985e-01  4.749e+03   0.000 0.999950    
+tdata.next_pymnt_d9/30/2013  -2.082e+01  3.956e+03  -0.005 0.995801    
+tdata.next_pymnt_d9/4/2012    1.979e+00  5.595e+03   0.000 0.999718    
+tdata.next_pymnt_d9/5/2013   -2.075e+01  3.956e+03  -0.005 0.995815    
+tdata.next_pymnt_d9/6/2010    2.126e+00  5.595e+03   0.000 0.999697    
+tdata.next_pymnt_d9/6/2012    3.611e-01  5.595e+03   0.000 0.999949    
+tdata.next_pymnt_d9/6/2013   -2.087e+01  3.956e+03  -0.005 0.995790    
+tdata.next_pymnt_d9/7/2013   -2.141e+01  3.956e+03  -0.005 0.995682    
+tdata.next_pymnt_d9/8/2010   -8.779e-01  4.709e+03   0.000 0.999851    
+tdata.next_pymnt_d9/8/2013   -2.127e+01  3.956e+03  -0.005 0.995710    
+tdata.next_pymnt_d9/9/2011   -4.838e-01  4.521e+03   0.000 0.999915    
+tdata.next_pymnt_d9/9/2012    1.711e+00  5.595e+03   0.000 0.999756    
+tdata.next_pymnt_d9/9/2013   -2.133e+01  3.956e+03  -0.005 0.995697    
+tdata.next_pymnt_dnull       -1.802e+01  3.956e+03  -0.005 0.996366    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 14395.8  on 15144  degrees of freedom
+Residual deviance:  6090.5  on 14647  degrees of freedom
+AIC: 7086.5
+
+Number of Fisher Scoring iterations: 16
+
+
+### After removing the insignificant variables we run the model and retain the variables which are significant
+
+model <- glm(tdata.Churn~ tdata.id+ tdata.member_id+ tdata.int_rate+ tdata.funded_amnt_inv+
+             tdata.last_pymnt_amnt+ tdata.fico_range_low+
+             tdata.grade+ tdata.total_pymnt, data=tnew, family=binomial())
+
+summary(model)
+
+model <- glm(tdata.Churn~tdata.member_id+ tdata.int_rate+ tdata.funded_amnt_inv+
+             tdata.fico_range_low+
+             tdata.grade+ tdata.total_pymnt, data=tnew, family=binomial())
+
+summary(model)
+
+Call:
+glm(formula = tdata.Churn ~ tdata.member_id + tdata.int_rate + 
+    tdata.funded_amnt_inv + tdata.fico_range_low + tdata.grade + 
+    tdata.total_pymnt, family = binomial(), data = tnew)
+
+Deviance Residuals: 
+    Min       1Q   Median       3Q      Max  
+-2.4163  -0.5339  -0.2996  -0.1478   4.0824  
+
+Coefficients:
+                        Estimate Std. Error z value Pr(>|z|)    
+(Intercept)            1.658e+01  1.164e+00  14.235  < 2e-16 ***
+tdata.member_id       -5.460e-06  1.510e-07 -36.162  < 2e-16 ***
+tdata.int_rate        -1.846e+01  2.850e+00  -6.478 9.31e-11 ***
+tdata.funded_amnt_inv  4.362e-04  1.189e-05  36.676  < 2e-16 ***
+tdata.fico_range_low  -1.668e-02  1.450e-03 -11.505  < 2e-16 ***
+tdata.gradeB           6.211e-01  1.304e-01   4.763 1.91e-06 ***
+tdata.gradeC           1.182e+00  1.899e-01   6.223 4.88e-10 ***
+tdata.gradeD           1.859e+00  2.443e-01   7.608 2.79e-14 ***
+tdata.gradeE           2.325e+00  2.950e-01   7.883 3.20e-15 ***
+tdata.gradeF           2.609e+00  3.641e-01   7.166 7.74e-13 ***
+tdata.gradeG           4.071e+00  4.491e-01   9.063  < 2e-16 ***
+tdata.total_pymnt     -6.758e-04  1.565e-05 -43.179  < 2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 14395.8  on 15144  degrees of freedom
+Residual deviance:  9436.9  on 15133  degrees of freedom
+AIC: 9460.9
+
+Number of Fisher Scoring iterations: 6
+
+
+vif(model)
+
+                           GVIF Df GVIF^(1/(2*Df))
+tdata.member_id        2.069392  1        1.438538
+tdata.int_rate        14.518630  1        3.810332
+tdata.funded_amnt_inv  7.141317  1        2.672324
+tdata.fico_range_low   3.070920  1        1.752404
+tdata.grade           14.348874  6        1.248537
+tdata.total_pymnt      4.489393  1        2.118819
+
+model <- glm(tdata.Churn~ tdata.funded_amnt_inv+
+             tdata.last_pymnt_amnt+
+             tdata.grade+ tdata.total_pymnt  , data=tnew, family=binomial())
+
+
+summary(model)
+
+Call:
+glm(formula = tdata.Churn ~ tdata.funded_amnt_inv + tdata.last_pymnt_amnt + 
+    tdata.grade + tdata.total_pymnt, family = binomial(), data = tnew)
+
+Deviance Residuals: 
+    Min       1Q   Median       3Q      Max  
+-1.8723  -0.6211  -0.4105  -0.1759   3.5264  
+
+Coefficients:
+                        Estimate Std. Error z value Pr(>|z|)    
+(Intercept)           -1.520e+00  7.443e-02 -20.428   <2e-16 ***
+tdata.funded_amnt_inv  1.467e-04  7.650e-06  19.179   <2e-16 ***
+tdata.last_pymnt_amnt  4.792e-04  2.353e-04   2.037   0.0417 *  
+tdata.gradeB           7.055e-01  8.033e-02   8.783   <2e-16 ***
+tdata.gradeC           1.216e+00  8.154e-02  14.908   <2e-16 ***
+tdata.gradeD           1.741e+00  8.479e-02  20.529   <2e-16 ***
+tdata.gradeE           2.027e+00  9.714e-02  20.872   <2e-16 ***
+tdata.gradeF           2.133e+00  1.441e-01  14.800   <2e-16 ***
+tdata.gradeG           3.468e+00  2.348e-01  14.771   <2e-16 ***
+tdata.total_pymnt     -4.021e-04  1.131e-05 -35.551   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 14396  on 15144  degrees of freedom
+Residual deviance: 11488  on 15135  degrees of freedom
+AIC: 11508
+
+Number of Fisher Scoring iterations: 5
+
+
+
+vif(model)
+
+                          GVIF Df GVIF^(1/(2*Df))
+tdata.funded_amnt_inv 3.409348  1        1.846442
+tdata.last_pymnt_amnt 2.305655  1        1.518438
+tdata.grade           1.079331  6        1.006382
+tdata.total_pymnt     2.661389  1        1.631376
+
+
+
+# R square (nagelkarke)
+
+modelChi <- model$null.deviance - model$deviance
+
+
+#Finding the degree of freedom for Null model and model with variables
+
+chidf <- model$df.null - model$df.residual
+chisq.prob <- 1 - pchisq(modelChi, chidf)
+R2.hl<-modelChi/model$null.deviance
+R.cs <- 1 - exp ((model$deviance - model$null.deviance) /nrow(tnew))
+R.n <- R.cs /(1-(exp(-(model$null.deviance/(nrow(tnew))))))
+R.n ## ranges from 0 to 1; closer to 1 better the model
+
+[1] 0.2847559
+
+nrow(tnew)
+
+# Predicted Probabilities
+
+prediction <- predict(model,newdata = tnew,type="response")
+library(pROC)
+library(ROCR)
+rocCurve   <- roc(response = tnew$tdata.Churn, predictor = prediction, 
+levels = rev(levels(tnew$tdata.Churn)))
+tnew$tdata.Churn <- as.factor(tnew$tdata.Churn)
+
+#Metrics - Fit Statistics
+
+predclass <-ifelse(prediction>coords(rocCurve,"best")[1],1,0)
+Confusion <- table(Predicted = predclass,Actual = tnew$tdata.Churn)
+AccuracyRate <- sum(diag(Confusion))/sum(Confusion)
+Gini <-2*auc(rocCurve)-1
+AUCmetric <- data.frame(c(coords(rocCurve,"best"),AUC=auc(rocCurve),AccuracyRate=AccuracyRate,Gini=Gini))
+AUCmetric <- data.frame(rownames(AUCmetric),AUCmetric)
+rownames(AUCmetric) <-NULL
+names(AUCmetric) <- c("Metric","Values")
+AUCmetric
+
+        Metric    Values
+1    threshold 0.2786894
+2  specificity 0.5898734
+3  sensitivity 0.8718901
+4          AUC 0.7884989
+5 AccuracyRate 0.8204028
+6         Gini 0.5769977
+
+
+Confusion 
+
+plot(rocCurve)
+
+### KS statistics calculation
+
+tnew$m1.yhat <- predict(model, tnew, type = "response")
+library(ROCR)
+m1.scores <- prediction(tnew$m1.yhat, tnew$tdata.Churn)
+plot(performance(m1.scores, "tpr", "fpr"), col = "red")
+abline(0,1, lty = 8, col = "grey")
+m1.perf <- performance(m1.scores, "tpr", "fpr")
+ks1.logit <- max(attr(m1.perf, "y.values")[[1]] - (attr(m1.perf, "x.values")[[1]]))
+ks1.logit # Thumb rule : should lie between 40% - 70%
+
+[1] 0.4617636
+
+names(tnew)[9] <- "pred"
+write.csv(tnew,"result.csv")
